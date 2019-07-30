@@ -80,6 +80,22 @@ def path(*args)
     return File.join(root, *args)
 end
 
+def current_branch
+    head = File.read(path("HEAD"))
+    if head.start_with? "ref: "
+        return path(head[5..-1]).sub(path("branches"), "")[1..-1]
+    end
+    return head
+end
+
+def current_frame
+    head = File.read(path("HEAD"))
+    if head.start_with? "ref: "
+        head = File.read(path(head[5..-1]))
+    end
+    return head
+end
+
 def add_to_log(message)
     # Standardise an event log.
     # datetime, author, event type, message
@@ -219,6 +235,11 @@ end
 
 def status(args)
     ensure_vcr
+    add_to_log(">>> status #{args.join(" ")}")
+
+
+    puts "On branch #{current_branch}"
+    add_to_log(">>> status #{args.join(" ")}")
 
 end
 
@@ -231,7 +252,7 @@ def commit(args)
     end
     author      = ENV['USER'] || ENV['USERNAME']
     now         = DateTime.now.to_s
-    parent      = File.read(path("HEAD"))
+    parent      = current_frame
     commit_hash = Digest::SHA1.hexdigest(now + author + parent + message)
     
     Dir.mkdir(path("frames", commit_hash))
