@@ -28,7 +28,7 @@
 
 module Actions
 
-    module Branches
+    module Tracks
 
         CREATE = "new"
         DELETE = "delete"
@@ -80,10 +80,10 @@ def path(*args)
     return File.join(root, *args)
 end
 
-def current_branch
+def current_track
     head = File.read(path("HEAD"))
     if head.start_with? "ref: "
-        return path(head[5..-1]).sub(path("branches"), "")[1..-1]
+        return path(head[5..-1]).sub(path("tracks"), "")[1..-1]
     end
     return head
 end
@@ -137,41 +137,38 @@ def init(args)
         puts "Already a vcr repository."
         return
     end
-    path = File.join(args[0] || Dir.pwd, ".vcr")
+    dir = File.join(args[0] || Dir.pwd, ".vcr")
 
+    Dir.mkdir(dir)                       # vcr directory
+    Dir.mkdir(File.join(dir, "frames"))  # all snapshots
+    Dir.mkdir(File.join(dir, "tracks"))  # all tracks
+    Dir.mkdir(File.join(dir, "tags"))    # all tags
+    Dir.mkdir(File.join(dir, "staging")) # staging directory
 
-    Dir.mkdir(path)              # vcr directory
-    Dir.mkdir(File.join(path, "frames"))   # all snapshots
-    Dir.mkdir(File.join(path, "branches")) # all branches
-    Dir.mkdir(File.join(path, "tags"))     # all tags
-
-    File.write(File.join(path, "branches", "master"), "") # create master branch
-
-    File.write(File.join(path, "config"), "") # config file
-    File.write(File.join(path, "HEAD"), "") # current head
-    File.write(File.join(path, ".log"), "") # log of all actions
+    File.write(File.join(dir, "config"), "") # config file
+    File.write(File.join(dir, "HEAD"), "")   # current head
+    File.write(File.join(dir, ".log"), "")   # log of all actions
 
     add_to_log(">>> init #{args[0] || Dir.pwd}")
     add_to_log("VCR initialised.")
-    branch([Actions::Branches::CREATE, "master"]) # create master branch
-    checkout([Actions::Context::CHECKOUT, "master"]) # checkout master branch
-
+    track([Actions::Tracks::CREATE, "master"])       # create master track
+    checkout([Actions::Context::CHECKOUT, "master"]) # checkout master track
 end
 
-def branch(args)
+def track(args)
     ensure_vcr
-    add_to_log(">>> branch #{args.join(" ")}")
+    add_to_log(">>> track #{args.join(" ")}")
 
     command = args[0]
     case command
-    when Actions::Branches::CREATE
-        branch_name = args[1]
+    when Actions::Tracks::CREATE
+        track_name = args[1]
 
         # TODO: check if valid name
 
-        if File.exists?(path("branches", branch_name))
-            puts "branch already exists."
-            add_to_log("branch #{branch_name} already exists")
+        if File.exists?(path("tracks", track_name))
+            puts "track already exists."
+            add_to_log("track #{track_name} already exists")
             exit(1)
         end
 
@@ -179,22 +176,22 @@ def branch(args)
         if head.start_with? "ref: "
             head = File.read(path(head[5..-1]))
         end
-        FileUtils.mkdir_p(File.dirname(path("branches", branch_name)))
-        File.write(path("branches", branch_name), head)
-        add_to_log("created #{branch_name} branch at #{head}")
+        FileUtils.mkdir_p(File.dirname(path("tracks", track_name)))
+        File.write(path("tracks", track_name), head)
+        add_to_log("created #{track_name} track at #{head}")
 
-    when Actions::Branches::LIST
-        Dir.glob(path("branches", "**", "*")) do |item|
+    when Actions::Tracks::LIST
+        Dir.glob(path("tracks", "**", "*")) do |item|
             next if item == '.' or item == '..' or not File.file?(item)
-            branch_name = item.sub(path("branches"), "")[1..-1]
-            puts branch_name
-            add_to_log(branch_name)
+            track_name = item.sub(path("tracks"), "")[1..-1]
+            puts track_name
+            add_to_log(track_name)
         end
 
-    when Actions::Branches::DELETE
-        # TODO: Check that branch has been merged in and warn if not.
+    when Actions::Tracks::DELETE
+        # TODO: Check that track has been merged in and warn if not.
 
-    when Actions::Branches::MERGE
+    when Actions::Tracks::MERGE
 
     else
         exit(1)
@@ -213,9 +210,9 @@ def checkout(args)
     target = args[0]
     # TODO: check if valid target
 
-    if File.file?(path("branches", target))
-        File.write(path("HEAD"), "ref: branches/#{target}")
-        add_to_log("ref: branches/#{target}")
+    if File.file?(path("tracks", target))
+        File.write(path("HEAD"), "ref: tracks/#{target}")
+        add_to_log("ref: tracks/#{target}")
 
     elsif File.file?(path("tags", target))
         File.write(path("HEAD"), "ref: tags/#{target}")
@@ -228,7 +225,7 @@ def checkout(args)
 
     else
         add_to_log("invalid checkout target")
-        puts "'#{target}' not recognised as either a branch, tag, or frame."
+        puts "'#{target}' not recognised as either a track, tag, or frame."
         exit(1)
     end
 end
@@ -238,7 +235,7 @@ def status(args)
     add_to_log(">>> status #{args.join(" ")}")
 
 
-    puts "On branch #{current_branch}"
+    puts "On track #{current_track
     add_to_log(">>> status #{args.join(" ")}")
 
 end
@@ -272,8 +269,8 @@ def handle_command(command, args)
         init(args)
     when "add"
         add(args)
-    when "branch"
-        branch(args)
+    when "track"
+        track(args)
     when "commit"
         commit(args)
     when "status"
