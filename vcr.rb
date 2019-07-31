@@ -17,7 +17,7 @@
   - [X] Stage files
   - [X] List staged files
   - [X] Unstage files
-  - [ ] Commit files
+  - [X] Commit files
   - [ ] Push commits
   - [ ] List commits
   - [ ] Fetch commits
@@ -96,7 +96,7 @@ end
 
 def current_frame
     head = File.read(vcr_path("HEAD"))
-    if head.start_with? "ref: "
+    while head.start_with? "ref: "
         head = File.read(vcr_path(head[5..-1]))
     end
     return head
@@ -292,7 +292,7 @@ def commit(args)
         exit(0)
     end
     author     = ENV['USER'] || ENV['USERNAME']
-    now        = DateTime.now.to_s
+    now        = DateTime.now.to_s(:number)
     parent     = current_frame
     frame_name = Digest::SHA1.hexdigest(now + author + parent + message)
     
@@ -304,13 +304,11 @@ def commit(args)
     source_path = vcr_path("staging")
     target_path = vcr_path("frames", frame_name, ".frame")
     Find.find(source_path) do |source|
-        target = source.sub(/^#{source_path}/, target_path)
-        # TODO: ignore files in a `.vcr-ignore` file as well.
         if File.directory? source
             Find.prune if File.basename(source) == '.vcr'
-            FileUtils.mkdir target unless File.exists? target
+            FileUtils.mkdir target_path unless File.exists? target_path
         else
-            FileUtils.copy source, target
+            FileUtils.copy source, target_path
         end
     end
     FileUtils.rm_rf(Dir.glob(vcr_path("staging", "*")))
@@ -324,9 +322,9 @@ def handle_command(command, args)
         init(args)
     when "add", "stage"
         add(args)
-    when "rm", "unstage"
+    when "remove", "unstage"
         remove(args)
-    when "track"
+    when "track", "branch"
         track(args)
     when "commit"
         commit(args)
