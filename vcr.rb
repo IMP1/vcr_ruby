@@ -9,20 +9,23 @@
 
 # Available Actions
 
-  - [X] Create VCR Repo
-  - [X] Create branches
-  - [X] List branches
-  - [X] Switch branches
-  - [X] Delete branches
-  - [X] Stage files
-  - [X] List staged files
-  - [X] Unstage files
-  - [X] Commit files
-  - [ ] Push commits
-  - [ ] List commits
-  - [ ] Fetch commits
-  - [ ] Merge branches
-  - [ ] Ignore files
+  - [X] Create VCR Repo         init
+  - [X] Create branches         branch new
+  - [X] List branches           branch list
+  - [X] Switch branches         branch set
+  - [X] Delete branches         branch delete
+  - [X] Create tags             tag new
+  - [X] List tags               tag list
+  - [X] Delete tags             tag delete
+  - [X] Stage files             stage
+  - [X] List staged files       ???
+  - [X] Unstage files           unstage
+  - [X] Commit files            commit
+  - [ ] Push commits            ???
+  - [ ] List commits            history
+  - [ ] Fetch commits           fetch
+  - [ ] Merge branches          merge
+  - [X] Ignore files
 
 =end
 
@@ -35,6 +38,7 @@ module Actions
         LIST   = "list"
         MERGE  = "merge"
         MODIFY = "modify"
+        SHOW   = "show"
 
     end
 
@@ -44,6 +48,7 @@ module Actions
         DELETE = "delete"
         LIST   = "list"
         MODIFY = "modify"
+        SHOW   = "show"
 
     end
 
@@ -189,17 +194,79 @@ def track(args)
 
     when Actions::Tracks::DELETE
         track_name = args[1]
-        # TODO: check if valid name
+        if !File.exists?(vcr_path("tracks", track_name))
+            puts "no such track #{track_name}."
+            add_to_log("missing #{track_name} track")
+            exit(1)
+        end
 
         # TODO: Check that track has been merged in and warn if not.
         if true
             prompt = "This track has not been merged yet. Are you sure? (y/n)\n"
-            if get_confirmation(prompt) { |response| response == "y" }
-                File.delete(vcr_path("tracks", track_name))
+            if get_confirmation(prompt) { |response| response != "y" }
+                return
             end
         end
+        File.delete(vcr_path("tracks", track_name))
+        add_to_log("deleted #{track_name} track")
 
     when Actions::Tracks::MERGE
+
+    else
+        exit(1)
+    end
+end
+
+def tag(args)
+    ensure_vcr
+    add_to_log(">>> tag #{args.join(" ")}")
+
+    command = args[0]
+    case command
+    when Actions::Tags::CREATE
+        tag_name = args[1]
+        # TODO: check if valid name
+
+        if File.exists?(vcr_path("tags", tag_name))
+            puts "tag already exists."
+            add_to_log("tag #{tag_name} already exists")
+            exit(1)
+        end
+
+        head = File.read(vcr_path("HEAD"))
+        if head.start_with? "ref: "
+            head = File.read(vcr_path(head[5..-1]))
+        end
+        FileUtils.mkdir_p(File.dirname(vcr_path("tags", tag_name)))
+        File.write(vcr_path("tags", tag_name), head)
+        if head.empty?
+            head = "repo creation"
+        end
+        add_to_log("created #{tag_name} tag at #{head}")
+
+    when Actions::Tags::LIST
+        Dir.glob(vcr_path("tags", "**", "*")) do |item|
+            next if item == '.' or item == '..' or not File.file?(item)
+            tag_name = item.sub(vcr_path("tags"), "")[1..-1]
+            puts tag_name
+            add_to_log(tag_name)
+        end
+
+    when Actions::Tags::SHOW
+        tag_name = args[1]
+
+
+    when Actions::Tags::DELETE
+        tag_name = args[1]
+
+        if !File.exists?(vcr_path("tags", tag_name))
+            puts "no such tag #{tag_name}"
+            add_to_log("missing #{tag_name} tag")
+            exit(1)
+        end
+
+        File.delete(vcr_path("tags", tag_name))
+        add_to_log("deleted #{tag_name} tag")
 
     else
         exit(1)
@@ -231,18 +298,18 @@ def checkout(args)
     target = args[0]
     # TODO: check if valid target
 
-    if File.file?(vcr_path("tracks", target))
-        File.write(vcr_path("HEAD"), "ref: tracks/#{target}")
-        add_to_log("ref: tracks/#{target}")
+    if Dir.entries(vcr_path("frames")).one? { |f| f.start_with? target }
+        frame = Dir.entries(vcr_path("frames")).find { |f| f.start_with? target }
+        File.write(vcr_path("HEAD"), frame)
+        add_to_log(frame)
 
     elsif File.file?(vcr_path("tags", target))
         File.write(vcr_path("HEAD"), "ref: tags/#{target}")
         add_to_log("ref: tags/#{target}")
 
-    elsif Dir.entries(vcr_path("frames")).one? { |f| f.start_with? target }
-        frame = Dir.entries(vcr_path("frames")).find { |f| f.start_with? target }
-        File.write(vcr_path("HEAD"), frame)
-        add_to_log(frame)
+    elsif File.file?(vcr_path("tracks", target))
+        File.write(vcr_path("HEAD"), "ref: tracks/#{target}")
+        add_to_log("ref: tracks/#{target}")
 
     else
         add_to_log("invalid checkout target")
@@ -336,6 +403,8 @@ def handle_command(command, args)
         remove(args)
     when "track", "branch"
         track(args)
+    when "tag"
+        tag(args)
     when "commit"
         commit(args)
     when "status"
