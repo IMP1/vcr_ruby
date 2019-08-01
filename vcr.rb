@@ -339,19 +339,21 @@ def status(args)
         ignored_files = File.readlines(repo_path(".vcr-ignore")).map { |f| f.chomp }
     end
 
-    puts "On track #{current_track}"
-    puts
+    if File.file?(vcr_path("tracks", current_track))
+        puts "On track #{current_track}"
+    else
+        puts "At frame #{current_track}"
+    end
 
-    puts "Changes staged for commit:"
+    puts "\nChanges staged for commit:"
     Dir.glob(vcr_path("staging", "**", "*")) do |item|
         next if item == '.' or item == '..' or not File.file?(item)
         file_name = item.sub(vcr_path("staging"), "")[1..-1]
         # TODO: add colour here (green)
         puts "\t" + file_name
     end
-    puts
 
-    puts "Changes not staged for commit:"
+    puts "\nChanges not staged for commit:"
     Find.find(repo_path) do |item|
         next if item == '.' or item == '..'
         Find.prune if File.basename(item) == '.vcr-ignore'
@@ -433,11 +435,11 @@ def handle_command(command, args)
         help(args)
     when "init"
         init(args)
-    when "add", "stage"
+    when "stage"
         add(args)
-    when "remove", "unstage"
+    when "unstage"
         remove(args)
-    when "track", "branch"
+    when "track"
         track(args)
     when "tag"
         tag(args)
