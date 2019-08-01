@@ -12,11 +12,12 @@
   - [X] Create VCR Repo         init
   - [X] Create branches         branch new
   - [X] List branches           branch list
-  - [X] Switch branches         branch set
   - [X] Delete branches         branch delete
+  - [X] Switch branches         checkout
   - [X] Create tags             tag new
   - [X] List tags               tag list
   - [X] Delete tags             tag delete
+  - [X] Go to tag               checkout
   - [X] Stage files             stage
   - [X] List staged files       ???
   - [X] Unstage files           unstage
@@ -49,13 +50,6 @@ module Actions
         LIST   = "list"
         MODIFY = "modify"
         SHOW   = "show"
-
-    end
-
-    module Context
-
-        CHECKOUT = "checkout"
-        STATUS   = "status"
 
     end
 
@@ -93,7 +87,7 @@ end
 
 def current_track
     head = File.read(vcr_path("HEAD"))
-    if head.start_with? "ref: "
+    while head.start_with? "ref: "
         return head[5..-1].sub("tracks/", "")
     end
     return head
@@ -177,7 +171,7 @@ def track(args)
         end
 
         head = File.read(vcr_path("HEAD"))
-        if head.start_with? "ref: "
+        while head.start_with? "ref: "
             head = File.read(vcr_path(head[5..-1]))
         end
         FileUtils.mkdir_p(File.dirname(vcr_path("tracks", track_name)))
@@ -192,6 +186,14 @@ def track(args)
             add_to_log(track_name)
         end
 
+    when Actions::Tracks::SHOW
+        track_name = args[1]
+        head = File.read(vcr_path("tracks", track_name))
+        while head.start_with? "ref: "
+            head = File.read(vcr_path(head[5..-1]))
+        end
+
+
     when Actions::Tracks::DELETE
         track_name = args[1]
         if !File.exists?(vcr_path("tracks", track_name))
@@ -201,9 +203,10 @@ def track(args)
         end
 
         # TODO: Check that track has been merged in and warn if not.
-        if true
+        unmerged_track = true
+        if unmerged_track
             prompt = "This track has not been merged yet. Are you sure? (y/n)\n"
-            if get_confirmation(prompt) { |response| response != "y" }
+            if get_confirmation(prompt) { |response| response != "y" and response != "yes" }
                 return
             end
         end
@@ -234,7 +237,7 @@ def tag(args)
         end
 
         head = File.read(vcr_path("HEAD"))
-        if head.start_with? "ref: "
+        while head.start_with? "ref: "
             head = File.read(vcr_path(head[5..-1]))
         end
         FileUtils.mkdir_p(File.dirname(vcr_path("tags", tag_name)))
@@ -363,18 +366,22 @@ end
 
 def commit(args)
     ensure_vcr
+    add_to_log("commit #{args.join(" ")}")
+
+    # TODO: check for anything in staging (don't allow empty commits)
+
     message = args[0]
     if message.nil?
         print("A commit message must be provided.")
+        add_to_log("missing commit message")
         exit(0)
     end
     author     = ENV['USER'] || ENV['USERNAME']
-    now        = DateTime.now.to_s(:number)
+    now        = DateTime.now.to_s
     parent     = current_frame
     frame_name = Digest::SHA1.hexdigest(now + author + parent + message)
     
     Dir.mkdir(vcr_path("frames", frame_name))
-    Dir.mkdir(vcr_path("frames", frame_name, ".frame"))
 
     File.write(vcr_path("HEAD"), frame_name)
 
@@ -388,7 +395,20 @@ def commit(args)
             FileUtils.copy source, target_path
         end
     end
+    File.write(vcr_path("frames", frame_name, "timestamp"), now)
+    File.write(vcr_path("frames", frame_name, "author"), author)
+    File.write(vcr_path("frames", frame_name, "parent"), parent)
+    File.write(vcr_path("frames", frame_name, "message"), message)
+    File.write(vcr_path("frames", frame_name, "timestamp"), "now")
+    File.open(vcr_path("frames", frame_name, "details"), 'w') do |file|
+        file.puts(now)
+        file.puts(author)
+        file.puts(parent)
+        file.puts(message)
+    end
+
     FileUtils.rm_rf(Dir.glob(vcr_path("staging", "*")))
+    add_to_log("created frame #{frame_name}")
 end
 
 def handle_command(command, args)
