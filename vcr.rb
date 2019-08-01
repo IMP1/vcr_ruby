@@ -13,7 +13,7 @@
   - [X] Create branches
   - [X] List branches
   - [X] Switch branches
-  - [ ] Delete branches
+  - [X] Delete branches
   - [X] Stage files
   - [X] List staged files
   - [X] Unstage files
@@ -120,8 +120,10 @@ def help(args)
     end
 end
 
-def create_frame(frame_name)
-    
+def get_confirmation(prompt, &block)
+    print prompt
+    response = $stdin.gets.chomp
+    return block.call(response)
 end
 
 def show_log(args)
@@ -161,7 +163,6 @@ def track(args)
     case command
     when Actions::Tracks::CREATE
         track_name = args[1]
-
         # TODO: check if valid name
 
         if File.exists?(vcr_path("tracks", track_name))
@@ -187,7 +188,16 @@ def track(args)
         end
 
     when Actions::Tracks::DELETE
+        track_name = args[1]
+        # TODO: check if valid name
+
         # TODO: Check that track has been merged in and warn if not.
+        if true
+            prompt = "This track has not been merged yet. Are you sure? (y/n)\n"
+            if get_confirmation(prompt) { |response| response == "y" }
+                File.delete(vcr_path("tracks", track_name))
+            end
+        end
 
     when Actions::Tracks::MERGE
 
