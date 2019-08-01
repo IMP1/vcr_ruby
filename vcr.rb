@@ -156,7 +156,7 @@ end
 
 def track(args)
     ensure_vcr
-    add_to_log(">>> track #{args.join(" ")}")
+    add_to_log(">>> track #{args.map{|a|a.inspect}.join(" ")}")
 
     command = args[0]
     case command
@@ -176,7 +176,7 @@ def track(args)
         end
         FileUtils.mkdir_p(File.dirname(vcr_path("tracks", track_name)))
         File.write(vcr_path("tracks", track_name), head)
-        add_to_log("created #{track_name} track at #{head}")
+        add_to_log("created #{track_name} track at #{head.empty? ? "repo creation" : head}")
 
     when Actions::Tracks::LIST
         Dir.glob(vcr_path("tracks", "**", "*")) do |item|
@@ -199,7 +199,7 @@ def track(args)
         end
         history.each do |frame| 
             puts frame 
-            add_to_log("created #{track_name} track at #{head}")
+            add_to_log(frame)
         end
 
     when Actions::Tracks::DELETE
@@ -230,7 +230,7 @@ end
 
 def tag(args)
     ensure_vcr
-    add_to_log(">>> tag #{args.join(" ")}")
+    add_to_log(">>> tag #{args.map{|a|a.inspect}.join(" ")}")
 
     command = args[0]
     case command
@@ -286,28 +286,30 @@ end
 
 def add(args)
     ensure_vcr
+    add_to_log(">>> stage #{args.map{|a|a.inspect}.join(" ")}")
 
     args.each do |filename|
+        # TODO: Make sure there are differences
         FileUtils.cp(repo_path(filename), vcr_path("staging", filename))
-        add_to_log(">>> stage #{filename}")
+        add_to_log("staged #{filename}")
     end
 end
 
 def remove(args)
     ensure_vcr
+    add_to_log(">>> unstage #{args.map{|a|a.inspect}.join(" ")}")
 
     args.each do |filename|
         FileUtils.rm(vcr_path("staging", filename))
-        add_to_log(">>> unstage #{filename}")
+        add_to_log("unstaged #{filename}")
     end
 end
 
 def checkout(args)
     ensure_vcr
-    add_to_log(">>> checkout #{args.join(" ")}")
+    add_to_log(">>> checkout #{args.map{|a|a.inspect}.join(" ")}")
 
     target = args[0]
-    # TODO: check if valid target
 
     if Dir.entries(vcr_path("frames")).one? { |f| f.start_with? target }
         frame = Dir.entries(vcr_path("frames")).find { |f| f.start_with? target }
@@ -374,7 +376,7 @@ end
 
 def commit(args)
     ensure_vcr
-    add_to_log("commit #{args.join(" ")}")
+    add_to_log(">>> commit #{args.map{|a|a.inspect}.join(" ")}")
 
     # TODO: check for anything in staging (don't allow empty commits)
 
