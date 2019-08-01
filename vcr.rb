@@ -187,12 +187,20 @@ def track(args)
         end
 
     when Actions::Tracks::SHOW
-        track_name = args[1]
+        track_name = args[1] || current_track
         head = File.read(vcr_path("tracks", track_name))
         while head.start_with? "ref: "
             head = File.read(vcr_path(head[5..-1]))
         end
-
+        history = []
+        until head.empty?
+            history.push(head)
+            head = File.read(vcr_path("frames", head, "parent"))
+        end
+        history.each do |frame| 
+            puts frame 
+            add_to_log("created #{track_name} track at #{head}")
+        end
 
     when Actions::Tracks::DELETE
         track_name = args[1]
@@ -383,7 +391,13 @@ def commit(args)
     
     Dir.mkdir(vcr_path("frames", frame_name))
 
-    File.write(vcr_path("HEAD"), frame_name)
+    if !File.file?(vcr_path("tracks", current_track))
+        puts "Warning: You're not at the end of a track."
+        puts "Either create a new track from this frame, or go to the end of the track."
+        exit(1)
+    end
+
+    File.write(vcr_path("tracks", current_track), frame_name)
 
     source_path = vcr_path("staging")
     target_path = vcr_path("frames", frame_name, ".frame")
