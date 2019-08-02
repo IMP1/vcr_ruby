@@ -48,6 +48,7 @@ module Actions
         DELETE = "delete"
         MODIFY = "modify"
         SHOW   = "show"
+        LIST   = "list"
 
     end
 
@@ -161,10 +162,6 @@ def get_confirmation(prompt, &block)
     return block.call(response)
 end
 
-def show_log(args)
-    
-end
-
 def init(args)
     if existing_repo?
         puts "Already a vcr repository."
@@ -207,10 +204,7 @@ def track(args)
             exit(2)
         end
 
-        head = File.read(vcr_path("HEAD"))
-        while head.start_with? "ref: "
-            head = File.read(vcr_path(head[5..-1]))
-        end
+        head = current_frame
         FileUtils.mkdir_p(File.dirname(vcr_path("tracks", track_name)))
         File.write(vcr_path("tracks", track_name), head)
         add_to_log("created #{track_name} track at #{head.empty? ? "repo creation" : head}")
@@ -235,7 +229,7 @@ def track(args)
             head = File.read(vcr_path("frames", head, "parent"))
         end
         history.each do |frame| 
-            puts frame 
+            puts frame[0...8] + " : " + File.read(vcr_path("frames", frame, "message")).inspect
             add_to_log(frame)
         end
 
@@ -354,14 +348,17 @@ def checkout(args)
     if Dir.entries(vcr_path("frames")).one? { |f| f.start_with? target }
         frame = Dir.entries(vcr_path("frames")).find { |f| f.start_with? target }
         File.write(vcr_path("HEAD"), frame)
+        puts "At frame #{frame}"
         add_to_log(frame)
 
     elsif File.file?(vcr_path("tags", target))
         File.write(vcr_path("HEAD"), "ref: tags/#{target}")
+        puts "At tag #{target}"
         add_to_log("ref: tags/#{target}")
 
     elsif File.file?(vcr_path("tracks", target))
         File.write(vcr_path("HEAD"), "ref: tracks/#{target}")
+        puts "On track #{target}"
         add_to_log("ref: tracks/#{target}")
 
     else
@@ -586,13 +583,23 @@ def merge(args)
         break if source_ancestors.any? { |ancestor| target_ancestors.include?(ancestor) }
     end
     merge_ancestor = target_ancestors.first { |ancestor| source_ancestors.include?(ancestor) }
-    
+
     p source_ancestors
     p target_ancestors
     p merge_ancestor
 
     # TODO: play out changes on one "branch" to other "branch"
+    # TODO: create a commit with a merge file to signify it as a merge. This commit will have refernces to 
+    #       the the source and target and the ancestor. This commit will also have any changes necessary to
+    #       resolve and merge conflicts.
 
+
+end
+
+def show_tree(args)
+    ensure_vcr
+    # TODO: create a visual representation of the tracks like. vertical branches with commit references
+    #       and tags, and branches
 end
 
 def handle_command(command, args)
@@ -619,8 +626,8 @@ def handle_command(command, args)
         diff(args)
     when "checkout"
         checkout(args)
-    when "log"
-        show_log(args)
+    when "history"
+        show_tree(args)
     else
         puts "Unrecognised command #{command}."
         exit(2)
