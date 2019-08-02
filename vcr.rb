@@ -373,8 +373,12 @@ def status(args)
         if File.file?(item)
             file_name = item.sub(repo_path, "")[1..-1]
             staged_item = vcr_path("staging", file_name)
+            commited_item = vcr_path("frames", current_frame, ".frame", file_name)
             if File.file?(staged_item)
-                next if File.mtime(item) <= File.mtime(staged_item)
+                next if FileUtils.identical?(item, staged_item)
+            end
+            if File.file?(commited_item)
+                next if FileUtils.identical?(item, commited_item)
             end
             unstaged_files.push(file_name)
         end
