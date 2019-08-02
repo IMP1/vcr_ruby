@@ -385,31 +385,65 @@ def status(args)
 end
 
 def diff(args)
-    # TODO: check args and allow for diff-ing one file (against the commited version)
-    #       and for diff-ing one file against another.
+    # TODO: get flags from args and allow for you to specify a source and target tracks
+    ignore_new = false
+    source = :working # this can be set to the staging area, or a specific track, or a frame, etc.
+    target = :staging # this can be set to the staging area, or a specific track, or a frame, etc.
+
+    source_path = case source
+    when :working
+        repo_path
+    when :staging
+        vcr_path("staging")
+    else
+    end
+
+    target_path = case target
+    when :working
+        repo_path
+    when :staging
+        vcr_path("staging")
+    else
+    end
+        
+
     ignored_files = []
     if File.file?(repo_path(".vcr-ignore"))
         ignored_files = File.readlines(repo_path(".vcr-ignore")).map { |f| f.chomp }
     end
-    changed_files = []
-    Find.find(repo_path) do |item|
-        next if item == '.' or item == '..'
-        Find.prune if File.basename(item) == '.vcr'
-        Find.prune if ignored_files.include?(File.basename(item))
-        if File.file?(item)
-            file_name = item.sub(repo_path, "")[1..-1]
-            staged_item = vcr_path("staging", file_name)
-            if File.file?(staged_item)
-                next if FileUtils.identical?(item, staged_item)
+
+    if args.empty?
+        # Diff all in source directory.
+        changed_files = []
+        Find.find(source_path) do |item|
+            next if item == '.' or item == '..'
+            Find.prune if File.basename(item) == '.vcr'
+            Find.prune if ignored_files.include?(File.basename(item))
+            if File.file?(item)
+                file_name = item.sub(source_path, "")[1..-1]
+                staged_item = File.join(target_path, file_name)
+                next if ignore_new and !File.file?(staged_item)
+                if File.file?(staged_item)
+                    next if FileUtils.identical?(item, staged_item)
+                end
+                changed_files.push(file_name)
             end
-            changed_files.push(file_name)
+        end
+
+    else
+        # Only diff the provided files
+        changed_files = args.select do |item|
+            file_name = item.sub(source_path, "")[1..-1]
+            staged_item = File.join(target_path, file_name)
+            not File.file?(staged_item) or not FileUtils.identical?(item, staged_item)
         end
     end
+
     changed_files.each do |file_name|
-        new_content = File.read(repo_path(file_name))
+        new_content = File.read(File.join(source_path, file_name))
         old_content = "" 
-        if File.file?(vcr_path("staging", file_name)) 
-            old_content = File.read(vcr_path("staging", file_name))
+        if File.file?(File.join(target_path, file_name)) 
+            old_content = File.read(File.join(target_path, file_name))
         end
         diff_string = Diffy::Diff.new(old_content, new_content, :include_diff_info => true).to_s
         diff_string.gsub!(/\-\-\-\s.+?$/) { "--- a/#{file_name}" }
@@ -417,10 +451,6 @@ def diff(args)
         puts
         puts diff_string
     end
-    # TODO: Go through files in working directory that have matching files in staging directory
-    #       and print out their diffs.
-    #       Check out https://github.com/samg/diffy as a gem to just do alla this for you. I've
-    #       copied the library into this folder, because I can't be dealing with gems; life's too short.
 end
 
 def commit(args)
