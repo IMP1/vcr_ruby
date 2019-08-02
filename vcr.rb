@@ -14,6 +14,7 @@
   - [X] List branches           branch list
   - [X] Delete branches         branch delete
   - [X] Switch branches         checkout
+  - [ ] Merge branches          merge
   - [X] Create tags             tag new
   - [X] List tags               tag list
   - [X] Delete tags             tag delete
@@ -25,19 +26,26 @@
   - [ ] Push commits            ???
   - [ ] List commits            history
   - [ ] Fetch commits           fetch
-  - [ ] Merge branches          merge
   - [X] Ignore files
+  - [ ] Just storing deltas
 
 =end
 
 module Actions
 
+    module Frames
+
+        CREATE = "new"
+        MERGE  = "merge"
+        SHOW   = "show"
+        LIST   = "list"
+
+    end
+
     module Tracks
 
         CREATE = "new"
         DELETE = "delete"
-        LIST   = "list"
-        MERGE  = "merge"
         MODIFY = "modify"
         SHOW   = "show"
 
@@ -98,12 +106,35 @@ def current_track
     return head
 end
 
+def get_object_reference(object_name)
+    if Dir.entries(vcr_path("frames")).one? { |f| f.start_with? object_name }
+        frame = Dir.entries(vcr_path("frames")).find { |f| f.start_with? object_name }
+        return frame
+
+    elsif File.file?(vcr_path("tags", object_name))
+        return "ref: tags/#{object_name}"
+
+    elsif File.file?(vcr_path("tracks", object_name))
+        return "ref: tracks/#{object_name}"
+
+    else
+        add_to_log("unrecognised object refernce #{object_name}")
+        puts "'#{object_name}' not recognised as either a track, tag, or frame."
+        exit(1)
+    end
+end
+
+def get_frame(frame_reference)
+    while frame_reference.start_with? "ref: "
+        return nil if !File.file?(vcr_path(frame_reference[5..-1]))
+        frame_reference = File.read(vcr_path(frame_reference[5..-1]))
+    end
+    return frame_reference
+end
+
 def current_frame
     head = File.read(vcr_path("HEAD"))
-    while head.start_with? "ref: "
-        head = File.read(vcr_path(head[5..-1]))
-    end
-    return head
+    return get_frame(head)
 end
 
 def add_to_log(message)
@@ -226,8 +257,6 @@ def track(args)
         end
         File.delete(vcr_path("tracks", track_name))
         add_to_log("deleted #{track_name} track")
-
-    when Actions::Tracks::MERGE
 
     else
         exit(2)
@@ -362,7 +391,7 @@ def status(args)
         file_name = item.sub(vcr_path("staging"), "")[1..-1]
         staged_files.push(file_name)
     end
-    puts "\nChanges staged for commit:"
+    puts "\nChanges staged for new frame:"
     staged_files.each { |file_name| puts "\t" + ConsoleColour.green(file_name) }
 
     unstaged_files = []
@@ -383,7 +412,7 @@ def status(args)
             unstaged_files.push(file_name)
         end
     end
-    puts "\nChanges not staged for commit:"
+    puts "\nChanges not staged for new frame:"
     unstaged_files.each { |file_name| puts "\t" + ConsoleColour.red(file_name) }
 
 end
@@ -457,62 +486,113 @@ def diff(args)
     end
 end
 
-def commit(args)
+def frame(args)
     ensure_vcr
-    add_to_log(">>> commit #{args.map{|a|a.inspect}.join(" ")}")
+    add_to_log(">>> frame #{args.map{|a|a.inspect}.join(" ")}")
 
-    if Dir.empty?(vcr_path("staging"))
-        puts "There's nothing to commit. Stage some changes."
-        add_to_log("nothing to commit")
-        exit(2)
-    end
+    command = args[0] # TODO: change this to `shift` to shift the array along, as this is no longer an arg, really.
 
-    message = args[0]
-    if message.nil?
-        print("A commit message must be provided.")
-        add_to_log("missing commit message")
-        exit(2)
-    end
-
-    author     = ENV['USER'] || ENV['USERNAME']
-    now        = DateTime.now.to_s
-    parent     = current_frame
-    frame_name = Digest::SHA1.hexdigest(now + author + parent + message)
-    
-    Dir.mkdir(vcr_path("frames", frame_name))
-
-    if !File.file?(vcr_path("tracks", current_track))
-        puts "Warning: You're not at the end of a track."
-        puts "Either create a new track from this frame, or go to the end of the track."
-        exit(2)
-    end
-
-    File.write(vcr_path("tracks", current_track), frame_name)
-
-    source_path = vcr_path("staging")
-    target_path = vcr_path("frames", frame_name, ".frame")
-    Find.find(source_path) do |source|
-        if File.directory? source
-            Find.prune if File.basename(source) == '.vcr'
-            FileUtils.mkdir target_path unless File.exists? target_path
-        else
-            FileUtils.copy source, target_path
+    case command
+        
+    when "new"
+        if Dir.empty?(vcr_path("staging"))
+            puts "There's nothing to make a new frame with. Stage some changes."
+            add_to_log("nothing to commit to new frame")
+            exit(2)
         end
+
+        message = args[1]
+        if message.nil?
+            print("A new frame message must be provided.")
+            add_to_log("missing new frame message")
+            exit(2)
+        end
+
+        author     = ENV['USER'] || ENV['USERNAME']
+        now        = DateTime.now.to_s
+        parent     = current_frame
+        frame_name = Digest::SHA1.hexdigest(now + author + parent + message)
+        
+        Dir.mkdir(vcr_path("frames", frame_name))
+
+        if !File.file?(vcr_path("tracks", current_track))
+            puts "Warning: You're not at the end of a track."
+            puts "Either create a new track from this frame, or go to the end of the track."
+            exit(2)
+        end
+
+        File.write(vcr_path("tracks", current_track), frame_name)
+
+        source_path = vcr_path("staging")
+        target_path = vcr_path("frames", frame_name, ".frame")
+        Find.find(source_path) do |source|
+            if File.directory? source
+                Find.prune if File.basename(source) == '.vcr'
+                FileUtils.mkdir target_path unless File.exists? target_path
+            else
+                FileUtils.copy source, target_path
+            end
+        end
+        File.write(vcr_path("frames", frame_name, "timestamp"), now)
+        File.write(vcr_path("frames", frame_name, "author"), author)
+        File.write(vcr_path("frames", frame_name, "parent"), parent)
+        File.write(vcr_path("frames", frame_name, "message"), message)
+        File.write(vcr_path("frames", frame_name, "timestamp"), "now")
+        File.open(vcr_path("frames", frame_name, "details"), 'w') do |file|
+            file.puts(now)
+            file.puts(author)
+            file.puts(parent)
+            file.puts(message)
+        end
+
+        FileUtils.rm_rf(Dir.glob(vcr_path("staging", "*")))
+        add_to_log("created frame #{frame_name}")
+
+
+    when Actions::Frames::LIST
+
+    when Actions::Frames::SHOW
+
     end
-    File.write(vcr_path("frames", frame_name, "timestamp"), now)
-    File.write(vcr_path("frames", frame_name, "author"), author)
-    File.write(vcr_path("frames", frame_name, "parent"), parent)
-    File.write(vcr_path("frames", frame_name, "message"), message)
-    File.write(vcr_path("frames", frame_name, "timestamp"), "now")
-    File.open(vcr_path("frames", frame_name, "details"), 'w') do |file|
-        file.puts(now)
-        file.puts(author)
-        file.puts(parent)
-        file.puts(message)
+end
+
+def merge(args)
+    # Good description of merges: 
+    # https://www.atlassian.com/git/tutorials/using-branches/git-merge
+    ensure_vcr
+    add_to_log(">>> merge #{args.map{|a|a.inspect}.join(" ")}")
+
+    merge_target = get_frame(get_object_reference(args[1] || current_frame))
+    merge_source = get_frame(get_object_reference(args[0]))
+
+    add_to_log("merge source is #{merge_source}")
+    add_to_log("merge target is #{merge_target}")
+
+    if merge_source == merge_target
+        puts "These are the same frame. No merge necessary."
+        exit(0)
     end
 
-    FileUtils.rm_rf(Dir.glob(vcr_path("staging", "*")))
-    add_to_log("created frame #{frame_name}")
+    # TODO: find first common ancestor of frames
+    # TODO: test this with offset ancestor lenghts (what happens if one branch runs out of ancestors?)
+    # TODO: test this with fast-forwardable branches (what happens when one commit is an ancestor of the other)
+    source_ancestors = [merge_source]
+    target_ancestors = [merge_target]
+    loop do 
+        next_source_parent = File.read(vcr_path("frames", source_ancestors.last, "parent"))
+        source_ancestors.push(next_source_parent) if !next_source_parent.empty?
+        next_target_parent = File.read(vcr_path("frames", target_ancestors.last, "parent"))
+        target_ancestors.push(next_target_parent) if !next_target_parent.empty?
+        break if source_ancestors.any? { |ancestor| target_ancestors.include?(ancestor) }
+    end
+    merge_ancestor = target_ancestors.first { |ancestor| source_ancestors.include?(ancestor) }
+    
+    p source_ancestors
+    p target_ancestors
+    p merge_ancestor
+
+    # TODO: play out changes on one "branch" to other "branch"
+
 end
 
 def handle_command(command, args)
@@ -529,8 +609,10 @@ def handle_command(command, args)
         track(args)
     when "tag"
         tag(args)
-    when "commit"
-        commit(args)
+    when "frame"
+        frame(args)
+    when "merge"
+        merge(args)
     when "status"
         status(args)
     when "diff"
