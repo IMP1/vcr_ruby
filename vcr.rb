@@ -65,6 +65,8 @@ require_relative 'diffy/diffy'
 
 WINDOWS_PLATFORMS = ["bccwin", "cygwin", "djgpp", "mingw", "mswin"]
 
+Diffy::Diff.default_format = :color
+
 def existing_repo?
     return File.exists?(root)
 end
@@ -159,7 +161,7 @@ end
 
 def track(args)
     ensure_vcr
-    add_to_log(">>> track #{args.map{|a|a.inspect}.join(" ")}")
+    add_to_log(">>> track #{args.map{|a|a}.join(" ")}")
 
     command = args[0]
     case command
@@ -234,7 +236,7 @@ end
 
 def tag(args)
     ensure_vcr
-    add_to_log(">>> tag #{args.map{|a|a.inspect}.join(" ")}")
+    add_to_log(">>> tag #{args.map{|a|a}.join(" ")}")
 
     command = args[0]
     case command
@@ -293,7 +295,12 @@ def add(args)
     add_to_log(">>> stage #{args.map{|a|a.inspect}.join(" ")}")
 
     args.each do |filename|
-        # TODO: Make sure there are differences
+        if File.exists?(vcr_path("staging", filename)) and 
+           FileUtils.identical?(repo_path(filename), vcr_path("staging", filename))
+            puts "There have been no changes in #{filename}."
+            add_to_log("no changes in #{filename}")
+            next
+        end
         FileUtils.cp(repo_path(filename), vcr_path("staging", filename))
         add_to_log("staged #{filename}")
     end
@@ -311,7 +318,7 @@ end
 
 def checkout(args)
     ensure_vcr
-    add_to_log(">>> checkout #{args.map{|a|a.inspect}.join(" ")}")
+    add_to_log(">>> checkout #{args.map{|a|a}.join(" ")}")
 
     target = args[0]
 
@@ -361,7 +368,6 @@ def status(args)
     unstaged_files = []
     Find.find(repo_path) do |item|
         next if item == '.' or item == '..'
-        Find.prune if File.basename(item) == '.vcr-ignore'
         Find.prune if File.basename(item) == '.vcr'
         Find.prune if ignored_files.include?(File.basename(item))
         if File.file?(item)
@@ -371,7 +377,6 @@ def status(args)
                 next if File.mtime(item) <= File.mtime(staged_item)
             end
             unstaged_files.push(file_name)
-            # TODO: add colour here (red)
         end
     end
     puts "\nChanges not staged for commit:"
@@ -380,8 +385,42 @@ def status(args)
 end
 
 def diff(args)
-    # Check out https://github.com/samg/diffy as a gem to just do alla this for you.
-    puts Diffy::Diff.new("foo", "bar")
+    # TODO: check args and allow for diff-ing one file (against the commited version)
+    #       and for diff-ing one file against another.
+    ignored_files = []
+    if File.file?(repo_path(".vcr-ignore"))
+        ignored_files = File.readlines(repo_path(".vcr-ignore")).map { |f| f.chomp }
+    end
+    changed_files = []
+    Find.find(repo_path) do |item|
+        next if item == '.' or item == '..'
+        Find.prune if File.basename(item) == '.vcr'
+        Find.prune if ignored_files.include?(File.basename(item))
+        if File.file?(item)
+            file_name = item.sub(repo_path, "")[1..-1]
+            staged_item = vcr_path("staging", file_name)
+            if File.file?(staged_item)
+                next if FileUtils.identical?(item, staged_item)
+            end
+            changed_files.push(file_name)
+        end
+    end
+    changed_files.each do |file_name|
+        new_content = File.read(repo_path(file_name))
+        old_content = "" 
+        if File.file?(vcr_path("staging", file_name)) 
+            old_content = File.read(vcr_path("staging", file_name))
+        end
+        diff_string = Diffy::Diff.new(old_content, new_content, :include_diff_info => true).to_s
+        diff_string.gsub!(/\-\-\-\s.+?$/) { "--- a/#{file_name}" }
+        diff_string.gsub!(/\+\+\+\s.+?$/) { "+++ b/#{file_name}" }
+        puts
+        puts diff_string
+    end
+    # TODO: Go through files in working directory that have matching files in staging directory
+    #       and print out their diffs.
+    #       Check out https://github.com/samg/diffy as a gem to just do alla this for you. I've
+    #       copied the library into this folder, because I can't be dealing with gems; life's too short.
 end
 
 def commit(args)
@@ -467,6 +506,7 @@ def handle_command(command, args)
     when "log"
         show_log(args)
     else
+        puts "Unrecognised command #{command}."
         exit(2)
     end
 end
