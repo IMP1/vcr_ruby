@@ -162,6 +162,7 @@ def track(args)
     case command
     when Actions::Tracks::CREATE
         track_name = args[1]
+        flags = args[2..-1].select { |a| a.start_with?('-') }
         # TODO: check if valid name
 
         if File.exists?(vcr_path("tracks", track_name))
@@ -380,7 +381,11 @@ def commit(args)
     ensure_vcr
     add_to_log(">>> commit #{args.map{|a|a.inspect}.join(" ")}")
 
-    # TODO: check for anything in staging (don't allow empty commits)
+    if Dir.empty?(vcr_path("staging"))
+        puts "There's nothing to commit. Stage some changes."
+        add_to_log("nothing to commit")
+        exit(1)
+    end
 
     message = args[0]
     if message.nil?
