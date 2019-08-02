@@ -59,6 +59,9 @@ require 'date'
 require 'digest'
 require 'find'
 require 'fileutils'
+require_relative 'console_colours'
+require_relative 'diffy/diffy'
+
 
 WINDOWS_PLATFORMS = ["bccwin", "cygwin", "djgpp", "mingw", "mswin"]
 
@@ -168,7 +171,7 @@ def track(args)
         if File.exists?(vcr_path("tracks", track_name))
             puts "track already exists."
             add_to_log("track #{track_name} already exists")
-            exit(1)
+            exit(2)
         end
 
         head = File.read(vcr_path("HEAD"))
@@ -208,7 +211,7 @@ def track(args)
         if !File.exists?(vcr_path("tracks", track_name))
             puts "no such track #{track_name}."
             add_to_log("missing #{track_name} track")
-            exit(1)
+            exit(2)
         end
 
         # TODO: Check that track has been merged in and warn if not.
@@ -225,7 +228,7 @@ def track(args)
     when Actions::Tracks::MERGE
 
     else
-        exit(1)
+        exit(2)
     end
 end
 
@@ -242,7 +245,7 @@ def tag(args)
         if File.exists?(vcr_path("tags", tag_name))
             puts "tag already exists."
             add_to_log("tag #{tag_name} already exists")
-            exit(1)
+            exit(2)
         end
 
         head = File.read(vcr_path("HEAD"))
@@ -274,14 +277,14 @@ def tag(args)
         if !File.exists?(vcr_path("tags", tag_name))
             puts "no such tag #{tag_name}"
             add_to_log("missing #{tag_name} tag")
-            exit(1)
+            exit(2)
         end
 
         File.delete(vcr_path("tags", tag_name))
         add_to_log("deleted #{tag_name} tag")
 
     else
-        exit(1)
+        exit(2)
     end
 end
 
@@ -328,7 +331,7 @@ def checkout(args)
     else
         add_to_log("invalid checkout target")
         puts "'#{target}' not recognised as either a track, tag, or frame."
-        exit(1)
+        exit(2)
     end
 end
 
@@ -341,20 +344,21 @@ def status(args)
     end
 
     if File.file?(vcr_path("tracks", current_track))
-        puts "On track #{current_track}"
+        puts "On track #{ConsoleColour.cyan(current_track)}"
     else
-        puts "At frame #{current_track}"
+        puts "At frame #{ConsoleColour.cyan(current_track)}"
     end
 
-    puts "\nChanges staged for commit:"
+    staged_files = []
     Dir.glob(vcr_path("staging", "**", "*")) do |item|
         next if item == '.' or item == '..' or not File.file?(item)
         file_name = item.sub(vcr_path("staging"), "")[1..-1]
-        # TODO: add colour here (green)
-        puts "\t" + file_name
+        staged_files.push(file_name)
     end
+    puts "\nChanges staged for commit:"
+    staged_files.each { |file_name| puts "\t" + ConsoleColour.green(file_name) }
 
-    puts "\nChanges not staged for commit:"
+    unstaged_files = []
     Find.find(repo_path) do |item|
         next if item == '.' or item == '..'
         Find.prune if File.basename(item) == '.vcr-ignore'
@@ -366,15 +370,18 @@ def status(args)
             if File.file?(staged_item)
                 next if File.mtime(item) <= File.mtime(staged_item)
             end
+            unstaged_files.push(file_name)
             # TODO: add colour here (red)
-            puts "\t" + file_name
         end
     end
+    puts "\nChanges not staged for commit:"
+    unstaged_files.each { |file_name| puts "\t" + ConsoleColour.red(file_name) }
 
 end
 
 def diff(args)
     # Check out https://github.com/samg/diffy as a gem to just do alla this for you.
+    puts Diffy::Diff.new("foo", "bar")
 end
 
 def commit(args)
@@ -384,15 +391,16 @@ def commit(args)
     if Dir.empty?(vcr_path("staging"))
         puts "There's nothing to commit. Stage some changes."
         add_to_log("nothing to commit")
-        exit(1)
+        exit(2)
     end
 
     message = args[0]
     if message.nil?
         print("A commit message must be provided.")
         add_to_log("missing commit message")
-        exit(0)
+        exit(2)
     end
+
     author     = ENV['USER'] || ENV['USERNAME']
     now        = DateTime.now.to_s
     parent     = current_frame
@@ -403,7 +411,7 @@ def commit(args)
     if !File.file?(vcr_path("tracks", current_track))
         puts "Warning: You're not at the end of a track."
         puts "Either create a new track from this frame, or go to the end of the track."
-        exit(1)
+        exit(2)
     end
 
     File.write(vcr_path("tracks", current_track), frame_name)
@@ -459,7 +467,7 @@ def handle_command(command, args)
     when "log"
         show_log(args)
     else
-        exit(1)
+        exit(2)
     end
 end
 
