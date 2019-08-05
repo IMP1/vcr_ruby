@@ -27,7 +27,7 @@
   - [ ] List commits            history
   - [ ] Fetch commits           fetch
   - [X] Ignore files
-  - [ ] Just storing deltas
+  - [ ] Just store deltas
 
 =end
 
@@ -68,8 +68,9 @@ require 'date'
 require 'digest'
 require 'find'
 require 'fileutils'
-require_relative 'console_colours'
 require_relative 'diffy/diffy'
+require_relative 'console_colours'
+require_relative 'console_directions'
 
 COMMIT_TEMPLATE = <<~END
     # This is a commit message. Make it a good one!
@@ -136,6 +137,20 @@ def get_frame(frame_reference)
     return frame_reference
 end
 
+def get_common_ancestor(frame1, frame2)
+    frame1_ancestors = [frame1]
+    frame2_ancestors = [frame2]
+    loop do 
+        next_source_parent = File.read(vcr_path("frames", frame1_ancestors.last, "parent"))
+        frame1_ancestors.push(next_source_parent) if !next_source_parent.empty?
+        next_target_parent = File.read(vcr_path("frames", frame2_ancestors.last, "parent"))
+        frame2_ancestors.push(next_target_parent) if !next_target_parent.empty?
+        break if frame1_ancestors.any? { |ancestor| frame2_ancestors.include?(ancestor) }
+    end
+    merge_ancestor = frame2_ancestors.find { |ancestor| frame1_ancestors.include?(ancestor) }
+    return merge_ancestor
+end
+
 def get_setting(*keys)
     case keys[0]
     when "interface"
@@ -148,7 +163,7 @@ def get_setting(*keys)
     when "user"
         case keys[1]
         when "name"
-            return "IMP1"
+            return nil
         end
     end 
 end
@@ -194,7 +209,8 @@ def init(args)
         IO.popen(['attrib', '+H', dir])  # hide .vcr folder on windows
     end
     Dir.mkdir(File.join(dir, "frames"))  # all snapshots
-    Dir.mkdir(File.join(dir, "tracks"))  # all tracks
+    Dir.mkdir(File.join(dir, "tracks"))  # all track HEADs
+    Dir.mkdir(File.join(dir, "roots"))   # all track origins
     Dir.mkdir(File.join(dir, "tags"))    # all tags
     Dir.mkdir(File.join(dir, "staging")) # staging directory
 
@@ -227,6 +243,8 @@ def track(args)
         head = current_frame
         FileUtils.mkdir_p(File.dirname(vcr_path("tracks", track_name)))
         File.write(vcr_path("tracks", track_name), head)
+        FileUtils.mkdir_p(File.dirname(vcr_path("roots", track_name)))
+        File.write(vcr_path("roots", track_name), current_frame)
         add_to_log("created #{track_name} track at #{head.empty? ? "repo creation" : head}")
 
     when Actions::Tracks::LIST
@@ -270,6 +288,7 @@ def track(args)
             end
         end
         File.delete(vcr_path("tracks", track_name))
+        File.delete(vcr_path("roots", track_name))
         add_to_log("deleted #{track_name} track")
 
     else
@@ -587,43 +606,48 @@ def merge(args)
         exit(0)
     end
 
+    # TODO: merge should keep track of branches here, because otherwise they're lost forever.
+    #       if one or both frames are the current tips of branches, then record that in the frame
+    #       somewhere.
+
     # TODO: find first common ancestor of frames
     # TODO: test this with offset ancestor lenghts (what happens if one branch runs out of ancestors?)
     # TODO: test this with fast-forwardable branches (what happens when one commit is an ancestor of the other)
-    source_ancestors = [merge_source]
-    target_ancestors = [merge_target]
-    loop do 
-        next_source_parent = File.read(vcr_path("frames", source_ancestors.last, "parent"))
-        source_ancestors.push(next_source_parent) if !next_source_parent.empty?
-        next_target_parent = File.read(vcr_path("frames", target_ancestors.last, "parent"))
-        target_ancestors.push(next_target_parent) if !next_target_parent.empty?
-        break if source_ancestors.any? { |ancestor| target_ancestors.include?(ancestor) }
-    end
-    merge_ancestor = target_ancestors.first { |ancestor| source_ancestors.include?(ancestor) }
-
-    p source_ancestors
-    p target_ancestors
+    merge_ancestor = get_common_ancestor(merge_source, merge_target)
     p merge_ancestor
 
     # TODO: play out changes on one "branch" to other "branch"
-    # TODO: create a commit with a merge file to signify it as a merge. This commit will have refernces to 
-    #       the the source and target and the ancestor. This commit will also have any changes necessary to
-    #       resolve and merge conflicts.
+    # TODO: create a commit with a merge file to signify it as a merge. This commit will have references to 
+    #       the the source and target and the ancestor. This commit will also have any changes necessary to 
+    #       resolve any merge conflicts in its .frame folder.
 
 
 end
 
 def show_tree(args)
     ensure_vcr
+    track_count = Dir[vcr_path("tracks", "*")].length
+    frame_count = Dir[vcr_path("frames", "*")].length
+    leaf_frames = Dir[vcr_path("tracks", "*")].map { |f| [File.basename(f), File.read(f)] }
+    ancestor = get_common_ancestor(leaf_frames[0][1], leaf_frames[1][1])
+    if ancestor
+        history = []
+        leaf_frames.each do |frame|
+
+        end
+    end
+    p ancestor
+    p dist1
+    p dist2
+    puts "#{frame_count} frames"
+    width = track_count * 2 - 1
+    puts "|" + " |" * (track_count-1)
     # TODO: create a visual representation of the tracks like. vertical branches with commit references
     #       and tags, and branches
 end
 
 def handle_command(command, args)
     case command
-    when "test"
-        `start notepad "vcr.rb"`
-        puts "hello!"
     when "help"
         help(args)
     when "init"
@@ -661,3 +685,4 @@ def main
 end
 
 main
+
