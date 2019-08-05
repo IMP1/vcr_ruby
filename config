@@ -1,0 +1,7 @@
+[user]
+name  = ""
+email = ""
+
+[interface]
+editor = "\"C:/Program Files/Sublime Text 3/subl.exe\" -w"
+use_colors = true

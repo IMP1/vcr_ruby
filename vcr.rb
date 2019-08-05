@@ -71,6 +71,9 @@ require 'fileutils'
 require_relative 'console_colours'
 require_relative 'diffy/diffy'
 
+COMMIT_TEMPLATE = <<~END
+    # This is a commit message. Make it a good one!
+END
 
 WINDOWS_PLATFORMS = ["bccwin", "cygwin", "djgpp", "mingw", "mswin"]
 
@@ -131,6 +134,23 @@ def get_frame(frame_reference)
         frame_reference = File.read(vcr_path(frame_reference[5..-1]))
     end
     return frame_reference
+end
+
+def get_setting(*keys)
+    case keys[0]
+    when "interface"
+        case keys[1]
+        when "editor"
+            return "notepad"
+        when "editor-args"
+            return "-w"
+        end
+    when "user"
+        case keys[1]
+        when "name"
+            return "IMP1"
+        end
+    end 
 end
 
 def current_frame
@@ -500,12 +520,16 @@ def frame(args)
 
         message = args[1]
         if message.nil?
-            print("A new frame message must be provided.")
-            add_to_log("missing new frame message")
-            exit(2)
+            editor = get_setting("interface", "editor")
+            editor_args = get_setting("interface", "editor-args")
+            temp_filename = vcr_path("commit-message")
+            File.write(temp_filename, COMMIT_TEMPLATE)
+            `start #{editor} "#{temp_filename}" #{editor_args}`
+            message = File.read(temp_filename)
         end
+        # TODO: only accept full messages in an editor?
 
-        author     = ENV['USER'] || ENV['USERNAME']
+        author     = get_setting("user", "name") || ENV['USER'] || ENV['USERNAME']
         now        = DateTime.now.to_s
         parent     = current_frame
         frame_name = Digest::SHA1.hexdigest(now + author + parent + message)
@@ -534,17 +558,10 @@ def frame(args)
         File.write(vcr_path("frames", frame_name, "author"), author)
         File.write(vcr_path("frames", frame_name, "parent"), parent)
         File.write(vcr_path("frames", frame_name, "message"), message)
-        File.write(vcr_path("frames", frame_name, "timestamp"), "now")
-        File.open(vcr_path("frames", frame_name, "details"), 'w') do |file|
-            file.puts(now)
-            file.puts(author)
-            file.puts(parent)
-            file.puts(message)
-        end
 
-        FileUtils.rm_rf(Dir.glob(vcr_path("staging", "*")))
+        staged_files = Dir.glob(vcr_path("staging", "*"), File::FNM_DOTMATCH) - %w[. ..]
+        FileUtils.rm_rf(staged_files)
         add_to_log("created frame #{frame_name}")
-
 
     when Actions::Frames::LIST
 
@@ -604,6 +621,9 @@ end
 
 def handle_command(command, args)
     case command
+    when "test"
+        `start notepad "vcr.rb"`
+        puts "hello!"
     when "help"
         help(args)
     when "init"
