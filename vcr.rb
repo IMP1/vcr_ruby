@@ -151,6 +151,16 @@ def get_common_ancestor(frame1, frame2)
     return merge_ancestor
 end
 
+def has_ancestor?(frame, ancestor)
+    current_frame = frame
+    loop do
+        parent = File.read(vcr_path("frames", current_frame, "parent"))
+        return false if parent.empty?
+        return true if parent == ancestor
+        current_frame = parent
+    end
+end
+
 def get_setting(*keys)
     case keys[0]
     when "interface"
@@ -628,17 +638,31 @@ def show_tree(args)
     ensure_vcr
     track_count = Dir[vcr_path("tracks", "*")].length
     frame_count = Dir[vcr_path("frames", "*")].length
-    leaf_frames = Dir[vcr_path("tracks", "*")].map { |f| [File.basename(f), File.read(f)] }
-    ancestor = get_common_ancestor(leaf_frames[0][1], leaf_frames[1][1])
-    if ancestor
-        history = []
-        leaf_frames.each do |frame|
 
-        end
+    leaf_frames = Dir[vcr_path("tracks", "*")].map do |f| 
+        track_name = f.sub(vcr_path("tracks"), "")[1..-1]
+        track_root = File.read(vcr_path("roots", track_name))
+        track_head = File.read(f)
+        [track_name, track_root, track_head]
     end
-    p ancestor
-    p dist1
-    p dist2
+    leaf_frames.sort! { |a, b| File.read(vcr_path("frames", a[1], "timestamp")) <=> File.read(vcr_path("frames", b[1], "timestamp")) }
+
+    all_frames = Dir[vcr_path("frames", "*")].map do |f|
+        frame_name = f.sub(vcr_path("frames"), "")[1..-1]
+        frame_track = leaf_frames.find { |leaf| has_ancestor?(leaf[1], frame_name) }
+        frame_track = (frame_track || ["master"])[0] # TODO: delete this once repo is in consistent state (no parentless commits except initial one)
+        [frame_name, frame_track]
+    end
+    all_frames.sort! { |a, b| File.read(vcr_path("frames", a[0], "timestamp")) <=> File.read(vcr_path("frames", b[0], "timestamp")) }
+    
+    all_frames.each do |frame|
+        col = leaf_frames.size.times.find do |i|
+            leaf_frames[i][0] == frame[1]
+        end
+        print "@"
+        print "--"
+    end
+
     puts "#{frame_count} frames"
     width = track_count * 2 - 1
     puts "|" + " |" * (track_count-1)
@@ -686,3 +710,27 @@ end
 
 main
 
+=begin
+
+| | | |
+| | | |
+|/  | |
+| _/  |
+|/    |
+| ___/
+|/
+|
+
+      @
+    @ |
+  @ | |
+@ | | |
+| | | @
+|/  | |
+@ __|/
+|/  |
+@ _/
+|/
+@
+
+=end
