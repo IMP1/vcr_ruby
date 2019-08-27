@@ -86,7 +86,7 @@ end
 
 def ensure_vcr
     if not existing_repo?
-        print("This isn't a vcr directory. User `vcr init` to make it one.")
+        puts("This isn't a vcr directory. User `vcr init` to make it one.")
         exit(0)
     end
 end
@@ -123,8 +123,7 @@ def get_object_reference(object_name)
         return "ref: tracks/#{object_name}"
 
     else
-        add_to_log("unrecognised object refernce #{object_name}")
-        puts "'#{object_name}' not recognised as either a track, tag, or frame."
+        output("'#{object_name}' not recognised as either a track, tag, or frame.")
         exit(1)
     end
 end
@@ -191,6 +190,11 @@ def add_to_log(message)
     end
 end
 
+def output(message)
+    add_to_log(message)
+    $stdout.puts(message)
+end
+
 def help(args)
     if args[0].nil?
         # Print general help
@@ -229,6 +233,7 @@ def init(args)
     File.write(File.join(dir, ".log"), "")   # log of all actions
 
     add_to_log(">>> init #{args[0] || Dir.pwd}")
+    output("New vcr repository")
     track([Actions::Tracks::CREATE, "master"]) # create master track
     checkout(["master"])                       # checkout master track
 end
@@ -245,8 +250,7 @@ def track(args)
         # TODO: check if valid name
 
         if File.exists?(vcr_path("tracks", track_name))
-            puts "track already exists."
-            add_to_log("track #{track_name} already exists")
+            output("Track #{track_name} already exists")
             exit(2)
         end
 
@@ -255,14 +259,13 @@ def track(args)
         File.write(vcr_path("tracks", track_name), head)
         FileUtils.mkdir_p(File.dirname(vcr_path("roots", track_name)))
         File.write(vcr_path("roots", track_name), current_frame)
-        add_to_log("created #{track_name} track at #{head.empty? ? "repo creation" : head}")
+        output("Created #{track_name} track at #{head.empty? ? "initialisation" : head}")
 
     when Actions::Tracks::LIST
         Dir.glob(vcr_path("tracks", "**", "*")) do |item|
             next if item == '.' or item == '..' or not File.file?(item)
             track_name = item.sub(vcr_path("tracks"), "")[1..-1]
-            puts track_name
-            add_to_log(track_name)
+            output(track_name)
         end
 
     when Actions::Tracks::SHOW
@@ -277,15 +280,13 @@ def track(args)
             head = File.read(vcr_path("frames", head, "parent"))
         end
         history.each do |frame| 
-            puts frame[0...8] + " : " + File.read(vcr_path("frames", frame, "message")).inspect
-            add_to_log(frame)
+            output(frame[0...8] + " : " + File.read(vcr_path("frames", frame, "message")).inspect)
         end
 
     when Actions::Tracks::DELETE
         track_name = args[1]
         if !File.exists?(vcr_path("tracks", track_name))
-            puts "no such track #{track_name}."
-            add_to_log("missing #{track_name} track")
+            output("Missing #{track_name} track")
             exit(2)
         end
 
@@ -293,13 +294,13 @@ def track(args)
         unmerged_track = true
         if unmerged_track
             prompt = "This track has not been merged yet. Are you sure? (y/n)\n"
-            if get_confirmation(prompt) { |response| response != "y" and response != "yes" }
+            if not get_confirmation(prompt) { |response| ["Y", "YES"].include?(response.upcase) }
                 return
             end
         end
         File.delete(vcr_path("tracks", track_name))
         File.delete(vcr_path("roots", track_name))
-        add_to_log("deleted #{track_name} track")
+        output("Deleted #{track_name} track")
 
     else
         exit(2)
@@ -317,8 +318,7 @@ def tag(args)
         # TODO: check if valid name
 
         if File.exists?(vcr_path("tags", tag_name))
-            puts "tag already exists."
-            add_to_log("tag #{tag_name} already exists")
+            output("Tag #{tag_name} already exists")
             exit(2)
         end
 
@@ -331,14 +331,13 @@ def tag(args)
         if head.empty?
             head = "repo creation"
         end
-        add_to_log("created #{tag_name} tag at #{head}")
+        output("Created #{tag_name} tag at #{head}")
 
     when Actions::Tags::LIST
         Dir.glob(vcr_path("tags", "**", "*")) do |item|
             next if item == '.' or item == '..' or not File.file?(item)
             tag_name = item.sub(vcr_path("tags"), "")[1..-1]
-            puts tag_name
-            add_to_log(tag_name)
+            output(tag_name)
         end
 
     when Actions::Tags::SHOW
@@ -349,13 +348,12 @@ def tag(args)
         tag_name = args[1]
 
         if !File.exists?(vcr_path("tags", tag_name))
-            puts "no such tag #{tag_name}"
-            add_to_log("missing #{tag_name} tag")
+            output("Missing #{tag_name} tag")
             exit(2)
         end
 
         File.delete(vcr_path("tags", tag_name))
-        add_to_log("deleted #{tag_name} tag")
+        output("Deleted #{tag_name} tag")
 
     else
         exit(2)
@@ -369,12 +367,11 @@ def add(args)
     args.each do |filename|
         if File.exists?(vcr_path("staging", filename)) and 
            FileUtils.identical?(repo_path(filename), vcr_path("staging", filename))
-            puts "There have been no changes in #{filename}."
-            add_to_log("no changes in #{filename}")
+            output("No changes in #{filename}")
             next
         end
         FileUtils.cp(repo_path(filename), vcr_path("staging", filename))
-        add_to_log("staged #{filename}")
+        output("Staged #{filename}")
     end
 end
 
@@ -384,7 +381,7 @@ def remove(args)
 
     args.each do |filename|
         FileUtils.rm(vcr_path("staging", filename))
-        add_to_log("unstaged #{filename}")
+        output("Unstaged #{filename}")
     end
 end
 
@@ -397,28 +394,25 @@ def checkout(args)
     if Dir.entries(vcr_path("frames")).one? { |f| f.start_with? target }
         frame = Dir.entries(vcr_path("frames")).find { |f| f.start_with? target }
         File.write(vcr_path("HEAD"), frame)
-        puts "At frame #{frame}"
-        add_to_log(frame)
+        output("At frame #{frame}")
 
     elsif File.file?(vcr_path("tags", target))
         File.write(vcr_path("HEAD"), "ref: tags/#{target}")
-        puts "At tag #{target}"
-        add_to_log("ref: tags/#{target}")
+        output("At tag #{target}")
 
     elsif File.file?(vcr_path("tracks", target))
         File.write(vcr_path("HEAD"), "ref: tracks/#{target}")
-        puts "On track #{target}"
-        add_to_log("ref: tracks/#{target}")
+        output("On track #{target}")
 
     else
-        add_to_log("invalid checkout target")
-        puts "'#{target}' not recognised as either a track, tag, or frame."
+        output("'#{target}' not recognised as either a track, tag, or frame.")
         exit(2)
     end
 end
 
 def status(args)
     ensure_vcr
+    add_to_log(">>> status")
 
     ignored_files = []
     if File.file?(repo_path(".vcr-ignore"))
@@ -426,9 +420,11 @@ def status(args)
     end
 
     if File.file?(vcr_path("tracks", current_track))
-        puts "On track #{ConsoleColour.cyan(current_track)}"
+        puts("On track #{ConsoleColour.cyan(current_track)}")
+        add_to_log("On track #{current_track}")
     else
-        puts "At frame #{ConsoleColour.cyan(current_track)}"
+        puts("At frame #{ConsoleColour.cyan(current_track)}")
+        add_to_log("At frame #{current_track}")
     end
 
     staged_files = []
@@ -437,8 +433,11 @@ def status(args)
         file_name = item.sub(vcr_path("staging"), "")[1..-1]
         staged_files.push(file_name)
     end
-    puts "\nChanges staged for new frame:"
-    staged_files.each { |file_name| puts "\t" + ConsoleColour.green(file_name) }
+    output("\nChanges staged for new frame:")
+    staged_files.each do |file_name| 
+        puts("\t" + ConsoleColour.green(file_name))
+        add_to_log("\t" + file_name)
+    end
 
     unstaged_files = []
     Find.find(repo_path) do |item|
@@ -458,12 +457,18 @@ def status(args)
             unstaged_files.push(file_name)
         end
     end
-    puts "\nChanges not staged for new frame:"
-    unstaged_files.each { |file_name| puts "\t" + ConsoleColour.red(file_name) }
+    output("\nChanges not staged for new frame:")
+    unstaged_files.each do |file_name| 
+        puts("\t" + ConsoleColour.red(file_name)) 
+        add_to_log("\t" + file_name) 
+    end
 
 end
 
 def diff(args)
+    ensure_vcr
+    add_to_log(">>> diff #{args.map{|a|a}.join(" ")}")
+
     # TODO: get flags from args and allow for you to specify a source and target tracks
     ignore_new = false
     source = :working # this can be set to the staging area, or a specific track, or a frame, etc.
@@ -527,8 +532,7 @@ def diff(args)
         diff_string = Diffy::Diff.new(old_content, new_content, :include_diff_info => true).to_s
         diff_string.gsub!(/\-\-\-\s.+?$/) { "--- a/#{file_name}" }
         diff_string.gsub!(/\+\+\+\s.+?$/) { "+++ b/#{file_name}" }
-        puts
-        puts diff_string
+        output("\n" + diff_string)
     end
 end
 
@@ -542,8 +546,7 @@ def frame(args)
         
     when "new"
         if Dir.empty?(vcr_path("staging"))
-            puts "There's nothing to make a new frame with. Stage some changes."
-            add_to_log("nothing to commit to new frame")
+            output("Nothing to commit to new frame")
             exit(2)
         end
 
@@ -568,6 +571,7 @@ def frame(args)
         if !File.file?(vcr_path("tracks", current_track))
             puts "Warning: You're not at the end of a track."
             puts "Either create a new track from this frame, or go to the end of the track."
+            add_to_log("Not at end of track; Cancelling new frame")
             exit(2)
         end
 
@@ -590,7 +594,7 @@ def frame(args)
 
         staged_files = Dir.glob(vcr_path("staging", "*"), File::FNM_DOTMATCH) - %w[. ..]
         FileUtils.rm_rf(staged_files)
-        add_to_log("created frame #{frame_name}")
+        output("Created frame #{frame_name}")
 
     when Actions::Frames::LIST
 
@@ -608,11 +612,11 @@ def merge(args)
     merge_target = get_frame(get_object_reference(args[1] || current_frame))
     merge_source = get_frame(get_object_reference(args[0]))
 
-    add_to_log("merge source is #{merge_source}")
-    add_to_log("merge target is #{merge_target}")
+    add_to_log("Merge source is #{merge_source}")
+    add_to_log("Merge target is #{merge_target}")
 
     if merge_source == merge_target
-        puts "These are the same frame. No merge necessary."
+        output "No merge necessary - Same frame"
         exit(0)
     end
 
