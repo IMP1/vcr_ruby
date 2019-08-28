@@ -433,7 +433,8 @@ def status(args)
         file_name = item.sub(vcr_path("staging"), "")[1..-1]
         staged_files.push(file_name)
     end
-    output("\nChanges staged for new frame:")
+    puts("")
+    output("Changes staged for new frame:")
     staged_files.each do |file_name| 
         puts("\t" + ConsoleColour.green(file_name))
         add_to_log("\t" + file_name)
@@ -457,7 +458,8 @@ def status(args)
             unstaged_files.push(file_name)
         end
     end
-    output("\nChanges not staged for new frame:")
+    puts("")
+    output("Changes not staged for new frame:")
     unstaged_files.each do |file_name| 
         puts("\t" + ConsoleColour.red(file_name)) 
         add_to_log("\t" + file_name) 
